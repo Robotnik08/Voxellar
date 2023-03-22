@@ -1,5 +1,7 @@
-import * as THREE from 'three';
-import { TileData } from './textures.js';
+
+console.log("hello");
+// import * as THREE from 'https://unpkg.com/three/build/three.module.js';
+// import { TileData } from './textures.js';
 const renderer = new THREE.WebGLRenderer(new OffscreenCanvas(window.innerWidth, window.innerHeight));
 renderer.setSize( window.innerWidth, window.innerHeight );
 const scene = new THREE.Scene();
@@ -14,16 +16,17 @@ function animate() {
 let mapSize;
 let map = [];
 const mesh = [];
-onmessage((e) => {
-    if (e.init) {
-        position.x = e.x;
-        position.y = e.y;
-        camera = e.cam;
-        map = e.map;
-        mapSize = e.mapSize;
+    console.log("test");
+onmessage = (e) => {
+    if (e.data.init) {
+        position.x = e.data.x;
+        position.y = e.data.y;
+        camera = e.data.cam;
+        map = e.data.map;
+        mapSize = e.data.mapSize;
         animate();
     }
-});
+};
 for (let x = 0; x < mapSize.x; x++) {
     mesh[x] = [];
     for (let y = 0; y < mapSize.y; y++) {
@@ -68,7 +71,6 @@ function AddBlock (w, h, d, position, id) {
     ]
     const cube = new THREE.Mesh( geometry, material );
     scene.add( cube );
-    mesh[position.x][position.y][position.z] = cube;
     cube.translateX(position.x);
     cube.translateY(position.y);
     cube.translateZ(position.z);

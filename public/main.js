@@ -1,43 +1,51 @@
-import * as THREE from 'three';
+import * as THREE from 'https://unpkg.com/three/build/three.module.js';
 import {PointerLockControls} from 'https://threejs.org/examples/jsm/controls/PointerLockControls.js';
 import { KeyHandler } from './input.js';
 import { TileData } from './textures.js';
+import { Voxel } from './voxel.js';
 const renderer = new THREE.WebGLRenderer();
-renderer.setSize( window.innerWidth, window.innerHeight );
+const size = {x: window.innerWidth > 1920 ? 1920: window.innerWidth, y: window.innerHeight > 1080 ? 1080 : window.innerHeight}
+renderer.setSize( size.x, size.y );
 document.body.appendChild( renderer.domElement );
 const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 10000 );
+const camera = new THREE.PerspectiveCamera( 55, size.x / size.y, 0.1, 60 );
 const controls = new PointerLockControls( camera, renderer.domElement );
 const keys = new KeyHandler();
 const tiles = new TileData();
-camera.position.set( 0, 20, 100 );
-let speed =  1;
+const canvas = document.createElement("canvas");
+canvas.width =size.x;
+canvas.height = size.y ;
+document.body.appendChild(canvas);
 window.addEventListener("mousedown", ()=> {
     controls.lock();
 })
+let fps = 0;
+let lastDate = Date.now();
 function animate() {
-    if (keys.getKey("KeyW")) {
-        camera.translateZ(-speed);
-    }
-    if (keys.getKey("KeyS")) {
-        camera.translateZ(speed);
-    }
-    if (keys.getKey("KeyA")) {
-        camera.translateX(-speed);
-    }
-    if (keys.getKey("KeyD")) {
-        camera.translateX(speed);
-    }
+    const now = Date.now();
+    const dt = (now - lastDate)/(1000/60);
+    fps = 1000/(now - lastDate);
+    lastDate = Date.now();
+    move(dt);
 	renderer.render( scene, camera );
+    canvas.getContext('2d').clearRect(0,0,canvas.width, canvas.height);
+    canvas.getContext('2d').fillStyle = "rgba(255,255,255,1)";
+    canvas.getContext('2d').font = "30px Arial";
+    canvas.getContext('2d').fillText(`FPS: ${fps|0}`,0,30);
 	requestAnimationFrame( animate );
 
 }
 const mapSize = new THREE.Vector3(64,32,64);
+const position = new THREE.Vector3(mapSize.x/2,mapSize.y,mapSize.z/2);
+camera.position.set( position.x, position.y, position.z );
+let speed = 0.01;
+const velocity = new THREE.Vector3(0,0,0);
 const map = [];
 const mesh = [];
 const seed = Math.random()*10000|0;
 const frequenty = 0.5;
 const smoothness = 0.1;
+const mounteness = 0.8;
 for (let x = 0; x < mapSize.x; x++) {
     mesh[x] = [];
     for (let y = 0; y < mapSize.y; y++) {
@@ -54,7 +62,18 @@ function generateWorld () {
         for (let y = 0; y < mapSize.y; y++) {
             map[x][y] = [];
             for (let z = 0; z < mapSize.z; z++) {
-                map[x][y][z] = getNoise(x*smoothness,y*smoothness,z*smoothness+seed*10) > frequenty+((y/mapSize.y)-0.5)*2 ? 3 : 0;
+                map[x][y][z] = getNoise(x*smoothness,y*smoothness,z*smoothness+seed*10) > frequenty+((y/mapSize.y)-0.5)*mounteness ? 1 : 0;
+            }
+        }
+    }
+    for (let x = 0; x < mapSize.x; x++) {
+        for (let z = 0; z < mapSize.z; z++) {
+            for (let y = mapSize.y-1; y > mapSize.y/2-6; y--) {
+                if (y+1 < mapSize.y) if (map[x][y][z] && !map[x][y+1][z]) {
+                    map[x][y][z] = 3;
+                    map[x][y-1][z] = map[x][y-1][z] ? 2 : 0;
+                    map[x][y-2][z] = map[x][y-2][z] ? 2 : 0;
+                }
             }
         }
     }
@@ -66,7 +85,6 @@ function generateWorld () {
         }
     }
 }
-camera.position.set( mapSize.x/2, mapSize.y-10, mapSize.z/2 );
 function AddBlock (w, h, d, position, id) {
     if (position.x > 0 && 
     position.x < mapSize.x-1 && 
@@ -81,7 +99,6 @@ function AddBlock (w, h, d, position, id) {
         map[position.x][position.y][position.z+1] &&
         map[position.x][position.y][position.z-1]
     ) return;
-    const geometry = new THREE.BoxGeometry( w, h, d );
     const material = [
         position.x < mapSize.x-1 ? !map[position.x+1][position.y][position.z] ? tiles.tile[id].texture[0] : null : null,
         position.x > 0 ? !map[position.x-1][position.y][position.z] ? tiles.tile[id].texture[1] : null : null,
@@ -90,32 +107,77 @@ function AddBlock (w, h, d, position, id) {
         position.z < mapSize.z-1 ? !map[position.x][position.y][position.z+1] ? tiles.tile[id].texture[4] : null : null,
         position.z > 0 ? !map[position.x][position.y][position.z-1] ? tiles.tile[id].texture[5] : null : null,
     ]
-    const cube = new THREE.Mesh( geometry, material );
+    const geometry = new Voxel( w, h, d ,1,2,1, (function(){const res = [];material.map((i) => {res.push(i != null)});return res;})());
+    const cube = new THREE.Mesh( geometry, material);
     scene.add( cube );
     mesh[position.x][position.y][position.z] = cube;
     cube.translateX(position.x);
     cube.translateY(position.y);
     cube.translateZ(position.z);
 }
+let dir = new THREE.Vector3(0,0,0);
 animate();
 function randomChance (chance) {
     return !((Math.random()*chance)|0);
 }
+const chunks = [];
 //initiateChunks();
 function initiateChunks () {
-    const chunks = [];
-    for (let x = 0; x < mapSize/16; x++) {
+    for (let x = 0; x < mapSize.x/16; x++) {
         chunks[x] = [];
-        for (let y = 0; y < mapSize/16; y++) {
-            chunks[x][y] = new Worker("./worker.js");
-            chunks[x][y].postMessage({init:true,x: x, y: y, cam: camera, map: map, mapSize: mapSize});
-            chunks[x][y].onmessage((e) => {
-                console.log(e);
-                document.getElementsByName("canvas")[0].getContext('2d').drawImage(e,0,0);
-            })
+        for (let z = 0; z < mapSize.z/16; z++) {
+            chunks[x][z] = new Worker("zChunk.js",{
+                type: 'module'
+              });
+            const obj = {
+                init:true,
+                x: x,
+                y: z,
+                cam: {pos: {x: camera.position.x, y: camera.position.y, z: camera.position.z}, rot: {x: camera.rotation.x, y: camera.rotation.y, z: camera.rotation.z}},
+                map: map,
+                mapSize: {x: mapSize.x, y: mapSize.y, z: mapSize.z}};
+            chunks[x][z].onmessage = (e) => {
+                console.log(e.data);
+                document.getElementsByName("canvas")[0].getContext('2d').drawImage(e.data,0,0);
+            };
+            chunks[x][z].postMessage(obj);
         }
     }
 }
+function move (dt) {
+    camera.getWorldDirection(dir);
+    velocity.x -= velocity.x/10*dt;
+    velocity.y -= velocity.y/10*dt;
+    velocity.z -=velocity.z/10*dt;
+    //*(speed*dt)
+    if (keys.getKey("KeyW")) {
+        const realDir = new THREE.Vector3(dir.x,0,dir.z).normalize();
+        velocity.add(new THREE.Vector3(realDir.x*(speed*dt),0,realDir.z*(speed*dt)));
+    }
+    if (keys.getKey("KeyS")) {
+        const realDir = new THREE.Vector3(dir.x,0,dir.z).normalize();
+        velocity.add(new THREE.Vector3(realDir.x*(-speed*dt),0,realDir.z*(-speed*dt)));
+    }
+    if (keys.getKey("KeyA")) {
+        const realDir = new THREE.Vector3(dir.z,0,dir.x).normalize();
+        velocity.add(new THREE.Vector3(realDir.x*(speed*dt),0,realDir.z*(-speed*dt)));
+    }
+    if (keys.getKey("KeyD")) {
+        const realDir = new THREE.Vector3(dir.z,0,dir.x).normalize();
+        velocity.add(new THREE.Vector3(realDir.x*(-speed*dt),0,realDir.z*(speed*dt)));
+    }
+    if (keys.getKey("Space")) {
+        velocity.add(new THREE.Vector3(0,speed*dt,0));
+    }
+    if (keys.getKey("ShiftLeft")) {
+        velocity.add(new THREE.Vector3(0,-speed*dt,0));
+    }
+    position.add(new THREE.Vector3(velocity.x*dt,velocity.y*dt,velocity.z*dt));
+    camera.position.set( position.x, position.y, position.z );
+}
+
+
+
 
 function getNoise(x, y, z) {
 
