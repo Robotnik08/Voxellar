@@ -32,48 +32,49 @@ function animate() {
 	requestAnimationFrame( animate );
 
 }
-const mapSize = 100;
+const mapSize = new THREE.Vector3(64,32,64);
 const map = [];
 const mesh = [];
 const seed = Math.random()*10000|0;
-const frequenty = 0.20;
+const frequenty = 0.5;
 const smoothness = 0.1;
-for (let x = 0; x < mapSize; x++) {
+for (let x = 0; x < mapSize.x; x++) {
     mesh[x] = [];
-    for (let y = 0; y < mapSize; y++) {
+    for (let y = 0; y < mapSize.y; y++) {
         mesh[x][y] = [];
-        for (let z = 0; z < mapSize; z++) {
+        for (let z = 0; z < mapSize.z; z++) {
             mesh[x][y][z] = false;
         }
     }
 }
 generateWorld();
 function generateWorld () {
-    for (let x = 0; x < mapSize; x++) {
+    for (let x = 0; x < mapSize.x; x++) {
         map[x] = [];
-        for (let y = 0; y < mapSize; y++) {
+        for (let y = 0; y < mapSize.y; y++) {
             map[x][y] = [];
-            for (let z = 0; z < mapSize; z++) {
-                map[x][y][z] = getNoise(x*smoothness,y*smoothness,z*smoothness+seed*10) < frequenty ? 1 : 0;
+            for (let z = 0; z < mapSize.z; z++) {
+                map[x][y][z] = getNoise(x*smoothness,y*smoothness,z*smoothness+seed*10) > frequenty+((y/mapSize.y)-0.5)*2 ? 3 : 0;
             }
         }
     }
-    for (let x = 0; x < mapSize; x++) {
-        for (let y = 0; y < mapSize; y++) {
-            for (let z = 0; z < mapSize; z++) {
+    for (let x = 1; x < mapSize.x-1; x++) {
+        for (let y = 1; y < mapSize.y-1; y++) {
+            for (let z = 1; z < mapSize.z-1; z++) {
                 if (map[x][y][z]) AddBlock(1,1,1, new THREE.Vector3(x,y,z), map[x][y][z]);
             }
         }
     }
 }
-camera.position.set( 0, 0, 100 );
+camera.position.set( mapSize.x/2, mapSize.y-10, mapSize.z/2 );
 function AddBlock (w, h, d, position, id) {
     if (position.x > 0 && 
-    position.x < mapSize-1 && 
+    position.x < mapSize.x-1 && 
     position.y > 0 && 
-    position.y < mapSize-1 &&
+    position.y < mapSize.y-1 &&
     position.z > 0 && 
-    position.z < mapSize-1) if (map[position.x+1][position.y][position.z] &&
+    position.z < mapSize.z-1) if (
+        map[position.x+1][position.y][position.z] &&
         map[position.x-1][position.y][position.z] &&
         map[position.x][position.y+1][position.z] &&
         map[position.x][position.y-1][position.z] &&
@@ -82,12 +83,12 @@ function AddBlock (w, h, d, position, id) {
     ) return;
     const geometry = new THREE.BoxGeometry( w, h, d );
     const material = [
-        position.x < mapSize-1 ? !map[position.x+1][position.y][position.z] ? tiles.tile[id].texture : null : tiles.tile[id].texture,
-        position.x > 0 ? !map[position.x-1][position.y][position.z] ? tiles.tile[id].texture : null : tiles.tile[id].texture,
-        position.y < mapSize-1 ? !map[position.x][position.y+1][position.z] ? tiles.tile[id].texture : null : tiles.tile[id].texture,
-        position.y > 0 ? !map[position.x][position.y-1][position.z] ? tiles.tile[id].texture : null : tiles.tile[id].texture,
-        position.z < mapSize-1 ? !map[position.x][position.y][position.z+1] ? tiles.tile[id].texture : null : tiles.tile[id].texture,
-        position.z > 0 ? !map[position.x][position.y][position.z-1] ? tiles.tile[id].texture : null : tiles.tile[id].texture,
+        position.x < mapSize.x-1 ? !map[position.x+1][position.y][position.z] ? tiles.tile[id].texture[0] : null : null,
+        position.x > 0 ? !map[position.x-1][position.y][position.z] ? tiles.tile[id].texture[1] : null : null,
+        position.y < mapSize.y-1 ? !map[position.x][position.y+1][position.z] ? tiles.tile[id].texture[2] : null : null,
+        position.y > 0 ? !map[position.x][position.y-1][position.z] ? tiles.tile[id].texture[3] : null : null,
+        position.z < mapSize.z-1 ? !map[position.x][position.y][position.z+1] ? tiles.tile[id].texture[4] : null : null,
+        position.z > 0 ? !map[position.x][position.y][position.z-1] ? tiles.tile[id].texture[5] : null : null,
     ]
     const cube = new THREE.Mesh( geometry, material );
     scene.add( cube );
@@ -100,7 +101,21 @@ animate();
 function randomChance (chance) {
     return !((Math.random()*chance)|0);
 }
-
+//initiateChunks();
+function initiateChunks () {
+    const chunks = [];
+    for (let x = 0; x < mapSize/16; x++) {
+        chunks[x] = [];
+        for (let y = 0; y < mapSize/16; y++) {
+            chunks[x][y] = new Worker("./worker.js");
+            chunks[x][y].postMessage({init:true,x: x, y: y, cam: camera, map: map, mapSize: mapSize});
+            chunks[x][y].onmessage((e) => {
+                console.log(e);
+                document.getElementsByName("canvas")[0].getContext('2d').drawImage(e,0,0);
+            })
+        }
+    }
+}
 
 function getNoise(x, y, z) {
 
